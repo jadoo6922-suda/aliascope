@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+.aliascope/
+config.json
+.env
+*.pem
