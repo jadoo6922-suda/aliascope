@@ -5,8 +5,11 @@
 | Module | What it does | Cost |
 |--------|----------------|------|
 | **Username / alias discovery** | Expands a handle into likely variants and probes *public* profile URLs | Free |
-| **Email free layer** | Registration / avatar signals (Gravatar, Firefox Accounts, cautious probes) | **Free** |
-| **Email HIBP layer** | Breach *names* only via official API | Optional paid HIBP key |
+| **Platforms YAML** | Add/remove sites without recompiling (`data/platforms.yaml`) | Free |
+| **Local SQLite history** | Every user scan stored under `~/.aliascope/aliascope.db` | Free |
+| **JSON / HTML reports** | Export scan results for sharing or archiving | Free |
+| **Email free layer** | Registration / avatar signals (Gravatar, Firefox Accounts, …) | Free |
+| **Email HIBP layer** | Breach *names* only via official API | Optional paid key |
 | **AI agents** | Optional dual API keys for alias ideas + neutral summary | Your keys |
 
 **This tool never returns leaked passwords.**
@@ -35,16 +38,13 @@ cargo build --release
 ./target/release/aliascope menu
 ```
 
-Optional PATH install:
-
 ```bash
-cp target/release/aliascope $PREFIX/bin/
+cp target/release/aliascope $PREFIX/bin/   # optional
 ```
 
 ### Linux / macOS
 
 ```bash
-# Rust: https://rustup.rs
 git clone https://github.com/jadoo6922-suda/aliascope.git
 cd aliascope
 cargo build --release
@@ -56,20 +56,54 @@ cargo build --release
 ## Usage
 
 ```text
-aliascope menu              Interactive UI (recommended)
-aliascope user alice        Alias / public profile scan
-aliascope email a@b.com     Free registration signals (+ optional HIBP)
-aliascope config            Store AI / HIBP keys locally
-aliascope ethics            Legal boundaries
+aliascope menu
+aliascope user alice
+aliascope user alice --limit 50 --json out.json --html out.html
+aliascope user alice --no-db
+aliascope email a@b.com
+aliascope history
+aliascope config
+aliascope ethics
 ```
 
-### Configure (optional)
+### Reports
+
+```bash
+aliascope user target --json report.json --html report.html
+```
+
+- JSON: machine-readable archive  
+- HTML: dark readable report for browser  
+- DB: `~/.aliascope/aliascope.db` (unless `--no-db`)
+
+### Custom platforms
+
+Edit or copy:
+
+```text
+data/platforms.yaml
+# or
+~/.aliascope/platforms.yaml
+```
+
+Example entry:
+
+```yaml
+platforms:
+  - name: GitHub
+    url: "https://github.com/{user}"
+    enabled: true
+```
+
+`{user}` is replaced with each alias candidate.
+
+---
+
+## Configure (optional)
 
 ```bash
 aliascope config
 ```
-
-Writes `~/.aliascope/config.json` **on your device only**:
 
 | Field | Purpose |
 |--------|---------|
@@ -77,57 +111,35 @@ Writes `~/.aliascope/config.json` **on your device only**:
 | Secondary AI key | Gemini |
 | HIBP API key | Optional paid breach-name lookup |
 
-Never commit real keys to git.
-
----
-
-## Email checks explained
-
-### Free (default)
-
-1. **Gravatar** — public avatar for MD5(email)  
-2. **Firefox Accounts** — public status API when available  
-3. **Cautious form probes** — ambiguous HTTP signals only (labeled low/medium confidence)  
-4. **Manual HIBP link** — open the free website check in a browser  
-
-### Optional HIBP API
-
-If you buy a key from [Have I Been Pwned API](https://haveibeenpwned.com/API/Key) and save it via `aliascope config`, the tool can list **breach names/dates**. Still **no passwords**.
-
----
-
-## Username discovery
-
-- Deterministic variants (suffixes, years, light leet, prefixes)
-- Optional AI expansion if a primary key is set
-- Platforms include GitHub, GitLab, Reddit, X, Instagram, TikTok, YouTube, LinkedIn, and more
-- Rate-limited (~120ms between requests)
-- HTTP 200/3xx = *possible* public page, not identity proof
+Keys stay in `~/.aliascope/config.json` — never commit them.
 
 ---
 
 ## Project layout
 
 ```text
+data/platforms.yaml   editable platform list
 src/
-  main.rs          CLI entry
-  ui.rs            Banner + interactive menu
-  username.rs      Alias engine + probes
-  platforms.rs     Public profile URL templates
-  email_check.rs   Free layer + optional HIBP
-  ai.rs            Dual-agent helpers
-  config.rs        Local keys
+  main.rs             CLI
+  ui.rs               interactive menu
+  username.rs         alias engine + probes
+  platforms.rs        YAML loader
+  email_check.rs      free email layer + optional HIBP
+  storage.rs          SQLite history
+  export.rs           JSON / HTML writers
+  ai.rs               dual-agent helpers
+  config.rs           local keys
 ```
 
 ---
 
-## Build
+## Roadmap (next)
 
-Release profile is size-optimized (`lto`, `strip`, `opt-level = "z"`).
-
-```bash
-cargo build --release
-```
+- DNS / MX checks for emails  
+- Stronger confidence scoring  
+- Batch scans from a file  
+- GitHub Actions release binaries  
+- TUI live progress  
 
 ---
 

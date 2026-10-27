@@ -1,8 +1,9 @@
 use anyhow::Result;
 use console::{style, Term};
-use dialoguer::{theme::ColorfulTheme, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use std::path::PathBuf;
 
-use crate::{config, email_check, username};
+use crate::{config, email_check, storage, username};
 
 pub fn print_banner() {
     let term = Term::stdout();
@@ -13,11 +14,11 @@ pub fn print_banner() {
     ));
     let _ = term.write_line(&format!(
         "{}",
-        style("║              A L I A S C O P E  v0.1                 ║").cyan().bold()
+        style("║              A L I A S C O P E  v0.2                 ║").cyan().bold()
     ));
     let _ = term.write_line(&format!(
         "{}",
-        style("║   Public alias OSINT · Breach presence (no secrets)  ║").cyan()
+        style("║  Public OSINT · SQLite history · JSON/HTML reports   ║").cyan()
     ));
     let _ = term.write_line(&format!(
         "{}",
@@ -43,8 +44,9 @@ pub async fn run_menu() -> Result<()> {
     loop {
         let items = vec![
             "Username / alias discovery",
-            "Email breach presence check",
-            "Configure AI API keys",
+            "Email free-layer check",
+            "Scan history (local DB)",
+            "Configure AI / HIBP keys",
             "Show ethics note",
             "Exit",
         ];
@@ -61,9 +63,38 @@ pub async fn run_menu() -> Result<()> {
                     .interact_text()?;
                 let limit: usize = Input::with_theme(&ColorfulTheme::default())
                     .with_prompt("Max candidates")
-                    .default(40)
-                    .interact_text()?;
-                username::run_user_scan(q.trim(), limit).await?;
+                    .default("40".into())
+                    .interact_text()?
+                    .parse()
+                    .unwrap_or(40);
+                let want_json = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Export JSON report?")
+                    .default(true)
+                    .interact()?;
+                let want_html = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Export HTML report?")
+                    .default(true)
+                    .interact()?;
+                let json_out = if want_json {
+                    Some(PathBuf::from(format!("aliascope-{}-report.json", q.trim())))
+                } else {
+                    None
+                };
+                let html_out = if want_html {
+                    Some(PathBuf::from(format!("aliascope-{}-report.html", q.trim())))
+                } else {
+                    None
+                };
+                username::run_user_scan(
+                    q.trim(),
+                    username::ScanOptions {
+                        limit,
+                        json_out,
+                        html_out,
+                        save_db: true,
+                    },
+                )
+                .await?;
             }
             1 => {
                 let email: String = Input::with_theme(&ColorfulTheme::default())
@@ -71,8 +102,20 @@ pub async fn run_menu() -> Result<()> {
                     .interact_text()?;
                 email_check::run_email_check(email.trim()).await?;
             }
-            2 => config::interactive_config()?,
-            3 => print_ethics(),
+            2 => {
+                let store = storage::Store::open_default()?;
+                let rows = store.recent_scans(20)?;
+                if rows.is_empty() {
+                    println!("{}", style("No scans stored yet.").yellow());
+                } else {
+                    println!("{}", style("Recent scans").green().bold());
+                    for (id, kind, query, at, hits) in rows {
+                        println!("  #{id}  [{kind}]  {query}  hits={hits}  {at}");
+                    }
+                }
+            }
+            3 => config::interactive_config()?,
+            4 => print_ethics(),
             _ => break,
         }
         println!();

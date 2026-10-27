@@ -1,0 +1,64 @@
+# Aliascope public profile templates
+# url uses {user} placeholder
+# enabled: set false to skip without deleting
+platforms:
+  - name: GitHub
+    url: "https://github.com/{user}"
+    enabled: true
+  - name: GitLab
+    url: "https://gitlab.com/{user}"
+    enabled: true
+  - name: Reddit
+    url: "https://www.reddit.com/user/{user}"
+    enabled: true
+  - name: X (Twitter)
+    url: "https://x.com/{user}"
+    enabled: true
+  - name: Instagram
+    url: "https://www.instagram.com/{user}/"
+    enabled: true
+  - name: TikTok
+    url: "https://www.tiktok.com/@{user}"
+    enabled: true
+  - name: YouTube
+    url: "https://www.youtube.com/@{user}"
+    enabled: true
+  - name: LinkedIn
+    url: "https://www.linkedin.com/in/{user}"
+    enabled: true
+  - name: Pinterest
+    url: "https://www.pinterest.com/{user}/"
+    enabled: true
+  - name: Twitch
+    url: "https://www.twitch.tv/{user}"
+    enabled: true
+  - name: Medium
+    url: "https://medium.com/@{user}"
+    enabled: true
+  - name: Steam
+    url: "https://steamcommunity.com/id/{user}"
+    enabled: true
+  - name: Keybase
+    url: "https://keybase.io/{user}"
+    enabled: true
+  - name: HackerNews
+    url: "https://news.ycombinator.com/user?id={user}"
+    enabled: true
+  - name: About.me
+    url: "https://about.me/{user}"
+    enabled: true
+  - name: Dev.to
+    url: "https://dev.to/{user}"
+    enabled: true
+  - name: ProductHunt
+    url: "https://www.producthunt.com/@{user}"
+    enabled: true
+  - name: SoundCloud
+    url: "https://soundcloud.com/{user}"
+    enabled: true
+  - name: Vimeo
+    url: "https://vimeo.com/{user}"
+    enabled: true
+  - name: Flickr
+    url: "https://www.flickr.com/people/{user}/"
+    enabled: true
