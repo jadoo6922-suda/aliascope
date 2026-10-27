@@ -1,0 +1,8 @@
+# Aliascope runtime settings (copy to ~/.aliascope/settings.yaml to override)
+rate_limit_ms: 120
+max_concurrent: 8
+request_timeout_sec: 12
+user_agent: "Aliascope/0.3 (+https://github.com/jadoo6922-suda/aliascope; legal-osint)"
+# proxy: "socks5://127.0.0.1:9050"  # optional
+strict_default: false
+cache_ttl_hours: 24

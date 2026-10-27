@@ -1,49 +1,20 @@
-# Aliascope
+# Aliascope v0.3
 
-**Legal OSINT CLI** (Rust) for Termux, Linux, and macOS.
+Modular **legal OSINT** CLI (Rust): separate engines, concurrency queue, SQLite cache/history, JSON/CSV/HTML export.
 
-| Module | What it does | Cost |
-|--------|----------------|------|
-| **Username / alias discovery** | Expands a handle into likely variants and probes *public* profile URLs | Free |
-| **Platforms YAML** | Add/remove sites without recompiling (`data/platforms.yaml`) | Free |
-| **Local SQLite history** | Every user scan stored under `~/.aliascope/aliascope.db` | Free |
-| **JSON / HTML reports** | Export scan results for sharing or archiving | Free |
-| **Email free layer** | Registration / avatar signals (Gravatar, Firefox Accounts, …) | Free |
-| **Email HIBP layer** | Breach *names* only via official API | Optional paid key |
-| **AI agents** | Optional dual API keys for alias ideas + neutral summary | Your keys |
+## Engines
 
-**This tool never returns leaked passwords.**
+| Engine | Capabilities |
+|--------|----------------|
+| **user** | Alias generation, YAML platforms, concurrent probes, cache, GitHub public API, AI triage |
+| **email** | DNS MX/A, Gravatar, Firefox status, optional HIBP names only, manual HIBP link |
+| **domain** | DNS A/MX/TXT, crt.sh CT, RDAP |
+| **image** | Local file size + MD5 only (no private cloud scraping) |
 
----
-
-## Ethics
-
-- Investigate only what you are **authorized** to investigate.
-- No stalking, harassment, or account takeover.
-- Public checks and licensed APIs only.
-- Free email layer reports **signals**, not proof of identity.
-- HIBP path reports **breach presence + names**, never passwords.
-
----
+**Never returns leaked passwords.**
 
 ## Install
 
-### Termux (Android)
-
-```bash
-pkg update && pkg install rust git clang make
-git clone https://github.com/jadoo6922-suda/aliascope.git
-cd aliascope
-cargo build --release
-./target/release/aliascope menu
-```
-
-```bash
-cp target/release/aliascope $PREFIX/bin/   # optional
-```
-
-### Linux / macOS
-
 ```bash
 git clone https://github.com/jadoo6922-suda/aliascope.git
 cd aliascope
@@ -51,102 +22,54 @@ cargo build --release
 ./target/release/aliascope menu
 ```
 
----
+Termux: `pkg install rust git clang make` then same.
 
-## Usage
+## Commands
 
-```text
-aliascope menu
-aliascope user alice
-aliascope user alice --limit 50 --json out.json --html out.html
-aliascope user alice --no-db
+```bash
+aliascope user alice --json u.json --csv u.csv --html u.html
+aliascope user alice --strict
 aliascope email a@b.com
+aliascope domain example.com
+aliascope image ./photo.jpg
+aliascope scan --user alice --email a@b.com --domain example.com -o report
+aliascope batch targets.txt --html batch.html
 aliascope history
 aliascope config
-aliascope ethics
 ```
 
-### Reports
-
-```bash
-aliascope user target --json report.json --html report.html
-```
-
-- JSON: machine-readable archive  
-- HTML: dark readable report for browser  
-- DB: `~/.aliascope/aliascope.db` (unless `--no-db`)
-
-### Custom platforms
-
-Edit or copy:
+### Batch file format
 
 ```text
-data/platforms.yaml
-# or
-~/.aliascope/platforms.yaml
+user:alice
+email:alice@example.com
+domain:example.com
+# plain line treated as username
+bob
 ```
 
-Example entry:
+## Config files
 
-```yaml
-platforms:
-  - name: GitHub
-    url: "https://github.com/{user}"
-    enabled: true
-```
+| Path | Purpose |
+|------|---------|
+| `data/platforms.yaml` | Profile URL templates (`{user}`) |
+| `data/settings.yaml` | rate limit, concurrency, timeout, proxy, cache TTL |
+| `~/.aliascope/config.json` | AI + HIBP + GitHub token (local) |
+| `~/.aliascope/aliascope.db` | History + HTTP status cache + audit log |
 
-`{user}` is replaced with each alias candidate.
+## Architecture
 
----
+- `engines/*` — isolated OSINT modules  
+- `queue` — semaphore-limited concurrent tasks  
+- `storage` — SQLite findings, cache, audit  
+- `export` — JSON / CSV / HTML  
+- `confidence` — high/medium/low/info + reasons  
+- `--strict` — high confidence only  
 
-## Configure (optional)
+## Ethics
 
-```bash
-aliascope config
-```
-
-| Field | Purpose |
-|--------|---------|
-| Primary AI key | Groq / OpenAI-compatible |
-| Secondary AI key | Gemini |
-| HIBP API key | Optional paid breach-name lookup |
-
-Keys stay in `~/.aliascope/config.json` — never commit them.
-
----
-
-## Project layout
-
-```text
-data/platforms.yaml   editable platform list
-src/
-  main.rs             CLI
-  ui.rs               interactive menu
-  username.rs         alias engine + probes
-  platforms.rs        YAML loader
-  email_check.rs      free email layer + optional HIBP
-  storage.rs          SQLite history
-  export.rs           JSON / HTML writers
-  ai.rs               dual-agent helpers
-  config.rs           local keys
-```
-
----
-
-## Roadmap (next)
-
-- DNS / MX checks for emails  
-- Stronger confidence scoring  
-- Batch scans from a file  
-- GitHub Actions release binaries  
-- TUI live progress  
-
----
+No stealer DBs, no login/2FA bypass, no unauthorized surveillance. Public signals ≠ proof of identity.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-## Disclaimer
-
-Authors are not responsible for misuse. OSINT output can be wrong; verify manually before any action.
+MIT

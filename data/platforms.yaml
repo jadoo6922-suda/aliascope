@@ -1,6 +1,3 @@
-# Aliascope public profile templates
-# url uses {user} placeholder
-# enabled: set false to skip without deleting
 platforms:
   - name: GitHub
     url: "https://github.com/{user}"
@@ -61,4 +58,16 @@ platforms:
     enabled: true
   - name: Flickr
     url: "https://www.flickr.com/people/{user}/"
+    enabled: true
+  - name: GitHub Gists
+    url: "https://gist.github.com/{user}"
+    enabled: true
+  - name: SourceForge
+    url: "https://sourceforge.net/u/{user}/profile/"
+    enabled: true
+  - name: Bitbucket
+    url: "https://bitbucket.org/{user}/"
+    enabled: true
+  - name: Hugging Face
+    url: "https://huggingface.co/{user}"
     enabled: true

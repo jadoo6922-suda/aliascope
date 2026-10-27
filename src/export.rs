@@ -4,125 +4,130 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 
-use crate::username::Hit;
+use crate::confidence::Finding;
 
 #[derive(Serialize)]
-pub struct UserScanReport {
-    pub tool: &'static str,
-    pub version: &'static str,
-    pub kind: &'static str,
-    pub query: String,
-    pub generated_at: String,
-    pub hit_count: usize,
-    pub hits: Vec<HitExport>,
-    pub disclaimer: &'static str,
+struct Report {
+    tool: &'static str,
+    version: &'static str,
+    kind: String,
+    query: String,
+    generated_at: String,
+    finding_count: usize,
+    findings: Vec<Finding>,
+    disclaimer: &'static str,
 }
 
-#[derive(Serialize)]
-pub struct HitExport {
-    pub alias: String,
-    pub platform: String,
-    pub url: String,
-    pub status: u16,
-    pub confidence: String,
-}
-
-pub fn hits_to_export(hits: &[Hit]) -> Vec<HitExport> {
-    hits.iter()
-        .map(|h| HitExport {
-            alias: h.alias.clone(),
-            platform: h.platform.clone(),
-            url: h.url.clone(),
-            status: h.status,
-            confidence: if h.likely_exists {
-                "medium".into()
-            } else {
-                "low".into()
-            },
-        })
-        .collect()
-}
-
-pub fn write_json(path: &Path, query: &str, hits: &[Hit]) -> Result<()> {
-    let report = UserScanReport {
+pub fn write_json(path: &Path, kind: &str, query: &str, findings: &[Finding]) -> Result<()> {
+    let report = Report {
         tool: "aliascope",
         version: env!("CARGO_PKG_VERSION"),
-        kind: "user",
-        query: query.to_string(),
+        kind: kind.into(),
+        query: query.into(),
         generated_at: Utc::now().to_rfc3339(),
-        hit_count: hits.len(),
-        hits: hits_to_export(hits),
-        disclaimer: "Public URL signals only. Not identity proof. No passwords.",
+        finding_count: findings.len(),
+        findings: findings.to_vec(),
+        disclaimer: "Public signals only. Not identity proof. No passwords.",
     };
-    let raw = serde_json::to_string_pretty(&report)?;
-    fs::write(path, raw)?;
+    fs::write(path, serde_json::to_string_pretty(&report)?)?;
     Ok(())
 }
 
-pub fn write_html(path: &Path, query: &str, hits: &[Hit]) -> Result<()> {
+pub fn write_csv(path: &Path, findings: &[Finding]) -> Result<()> {
+    let mut wtr = csv::Writer::from_path(path)?;
+    wtr.write_record([
+        "engine",
+        "subject",
+        "title",
+        "detail",
+        "url",
+        "confidence",
+        "reason",
+    ])?;
+    for f in findings {
+        wtr.write_record([
+            f.engine.as_str(),
+            f.subject.as_str(),
+            f.title.as_str(),
+            f.detail.as_str(),
+            f.url.as_deref().unwrap_or(""),
+            f.confidence.as_str(),
+            f.reason.as_str(),
+        ])?;
+    }
+    wtr.flush()?;
+    Ok(())
+}
+
+pub fn write_html(path: &Path, kind: &str, query: &str, findings: &[Finding]) -> Result<()> {
     let mut rows = String::new();
-    for h in hits {
-        let conf = if h.likely_exists { "medium" } else { "low" };
+    for f in findings {
         rows.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td><a href=\"{}\">{}</a></td><td>{}</td><td>{}</td></tr>\n",
-            escape(&h.platform),
-            escape(&h.alias),
-            escape(&h.url),
-            escape(&h.url),
-            h.status,
-            conf
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+            esc(&f.engine),
+            esc(&f.subject),
+            esc(&f.title),
+            esc(&f.detail),
+            f.url
+                .as_ref()
+                .map(|u| format!("<a href=\"{}\">link</a>", esc(u)))
+                .unwrap_or_else(|| "-".into()),
+            f.confidence.as_str(),
+            esc(&f.reason),
         ));
     }
     if rows.is_empty() {
-        rows = "<tr><td colspan=\"5\">No hits</td></tr>".into();
+        rows = "<tr><td colspan=\"7\">No findings</td></tr>".into();
     }
     let html = format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<title>Aliascope report — {q}</title>
+        r#"<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
+<title>Aliascope {kind} — {q}</title>
 <style>
-  body {{ font-family: system-ui, sans-serif; background:#0b1220; color:#e8eefc; margin:2rem; }}
-  h1 {{ color:#6ecbff; }}
-  .meta {{ color:#9fb0c7; margin-bottom:1.5rem; }}
-  table {{ border-collapse: collapse; width:100%; }}
-  th, td {{ border:1px solid #243044; padding:.55rem .7rem; text-align:left; }}
-  th {{ background:#152238; }}
-  tr:nth-child(even) {{ background:#101a2b; }}
-  a {{ color:#7dd3fc; }}
-  .warn {{ margin-top:1.5rem; color:#fbbf24; font-size:.9rem; }}
-</style>
-</head>
-<body>
-  <h1>Aliascope scan</h1>
-  <div class="meta">
-    Query: <strong>{q}</strong><br/>
-    Generated: {ts}<br/>
-    Hits: {n}
-  </div>
-  <table>
-    <thead><tr><th>Platform</th><th>Alias</th><th>URL</th><th>HTTP</th><th>Confidence</th></tr></thead>
-    <tbody>
-{rows}
-    </tbody>
-  </table>
-  <p class="warn">Public URL signals only. Not identity proof. No passwords. Use only with authorization.</p>
-</body>
-</html>
-"#,
-        q = escape(query),
-        ts = escape(&Utc::now().to_rfc3339()),
-        n = hits.len(),
+body{{font-family:system-ui,sans-serif;background:#0b1220;color:#e8eefc;margin:2rem}}
+h1{{color:#6ecbff}} table{{border-collapse:collapse;width:100%}}
+th,td{{border:1px solid #243044;padding:.5rem;text-align:left;font-size:.9rem}}
+th{{background:#152238}} a{{color:#7dd3fc}} .warn{{color:#fbbf24;margin-top:1rem}}
+</style></head><body>
+<h1>Aliascope {kind}</h1>
+<p>Query: <strong>{q}</strong> · {n} findings · {ts}</p>
+<table><thead><tr>
+<th>Engine</th><th>Subject</th><th>Title</th><th>Detail</th><th>URL</th><th>Confidence</th><th>Reason</th>
+</tr></thead><tbody>{rows}</tbody></table>
+<p class="warn">Public signals only. Not identity proof. No passwords. Authorized use only.</p>
+</body></html>"#,
+        kind = esc(kind),
+        q = esc(query),
+        n = findings.len(),
+        ts = esc(&Utc::now().to_rfc3339()),
         rows = rows
     );
     fs::write(path, html)?;
     Ok(())
 }
 
-fn escape(s: &str) -> String {
+fn esc(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+pub fn export_all(
+    kind: &str,
+    query: &str,
+    findings: &[Finding],
+    json: Option<&Path>,
+    csv: Option<&Path>,
+    html: Option<&Path>,
+) -> Result<()> {
+    if let Some(p) = json {
+        write_json(p, kind, query, findings)?;
+    }
+    if let Some(p) = csv {
+        write_csv(p, findings)?;
+    }
+    if let Some(p) = html {
+        write_html(p, kind, query, findings)?;
+    }
+    Ok(())
 }

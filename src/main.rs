@@ -1,22 +1,24 @@
 mod ai;
+mod confidence;
 mod config;
-mod email_check;
+mod engines;
 mod export;
 mod platforms;
+mod queue;
 mod storage;
 mod ui;
-mod username;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use console::style;
 use std::path::PathBuf;
 
+use crate::confidence::Finding;
+
 #[derive(Parser, Debug)]
 #[command(name = "aliascope")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Aliascope — legal OSINT: public username discovery + free email signals")]
-#[command(propagate_version = true)]
+#[command(about = "Aliascope — modular legal OSINT (user, email, domain, image)")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -24,38 +26,110 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Interactive menu (recommended)
     Menu,
-    /// Discover likely usernames / public profiles
+    /// Username / alias public discovery
     User {
-        /// Base handle to expand and probe
         query: String,
-        /// Max alias candidates to generate
         #[arg(short, long, default_value_t = 40)]
         limit: usize,
-        /// Write JSON report to this path
+        #[arg(long, default_value_t = false)]
+        strict: bool,
         #[arg(long)]
         json: Option<PathBuf>,
-        /// Write HTML report to this path
+        #[arg(long)]
+        csv: Option<PathBuf>,
         #[arg(long)]
         html: Option<PathBuf>,
-        /// Skip writing results to local SQLite DB
-        #[arg(long, default_value_t = false)]
-        no_db: bool,
     },
-    /// Free email registration signals (+ optional HIBP)
+    /// Email free-layer + DNS/MX (+ optional HIBP)
     Email {
         address: String,
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+        #[arg(long)]
+        json: Option<PathBuf>,
+        #[arg(long)]
+        csv: Option<PathBuf>,
+        #[arg(long)]
+        html: Option<PathBuf>,
     },
-    /// Show recent scans from local DB
+    /// Domain DNS / CT / RDAP
+    Domain {
+        name: String,
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+        #[arg(long)]
+        json: Option<PathBuf>,
+        #[arg(long)]
+        csv: Option<PathBuf>,
+        #[arg(long)]
+        html: Option<PathBuf>,
+    },
+    /// Local image file hashes only
+    Image {
+        path: String,
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+        #[arg(long)]
+        json: Option<PathBuf>,
+        #[arg(long)]
+        csv: Option<PathBuf>,
+        #[arg(long)]
+        html: Option<PathBuf>,
+    },
+    /// Unified scan shortcut
+    Scan {
+        #[arg(long)]
+        user: Option<String>,
+        #[arg(long)]
+        email: Option<String>,
+        #[arg(long)]
+        domain: Option<String>,
+        #[arg(long)]
+        image: Option<String>,
+        #[arg(short = 'o', long)]
+        out: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+    },
+    /// Batch file: lines like user:alice / email:a@b.com / domain:example.com
+    Batch {
+        file: PathBuf,
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+        #[arg(long)]
+        json: Option<PathBuf>,
+        #[arg(long)]
+        html: Option<PathBuf>,
+    },
     History {
-        #[arg(short, long, default_value_t = 15)]
+        #[arg(short, long, default_value_t = 20)]
         limit: usize,
     },
-    /// Configure AI / HIBP keys
     Config,
-    /// Show ethics / legal boundaries
     Ethics,
+}
+
+fn emit(
+    kind: &str,
+    query: &str,
+    findings: &[Finding],
+    json: Option<PathBuf>,
+    csv: Option<PathBuf>,
+    html: Option<PathBuf>,
+) -> Result<()> {
+    export::export_all(
+        kind,
+        query,
+        findings,
+        json.as_deref(),
+        csv.as_deref(),
+        html.as_deref(),
+    )?;
+    if json.is_some() || csv.is_some() || html.is_some() {
+        println!("{}", style("Reports written.").green());
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -66,36 +140,116 @@ async fn main() -> Result<()> {
         Commands::User {
             query,
             limit,
+            strict,
             json,
+            csv,
             html,
-            no_db,
         } => {
             ui::print_banner();
-            username::run_user_scan(
-                &query,
-                username::ScanOptions {
-                    limit,
-                    json_out: json,
-                    html_out: html,
-                    save_db: !no_db,
-                },
-            )
-            .await?;
+            let f = engines::username::scan(&query, limit, strict).await?;
+            emit("user", &query, &f, json, csv, html)?;
         }
-        Commands::Email { address } => {
+        Commands::Email {
+            address,
+            strict,
+            json,
+            csv,
+            html,
+        } => {
             ui::print_banner();
-            email_check::run_email_check(&address).await?;
+            let f = engines::email::scan(&address, strict).await?;
+            emit("email", &address, &f, json, csv, html)?;
+        }
+        Commands::Domain {
+            name,
+            strict,
+            json,
+            csv,
+            html,
+        } => {
+            ui::print_banner();
+            let f = engines::domain::scan(&name, strict).await?;
+            emit("domain", &name, &f, json, csv, html)?;
+        }
+        Commands::Image {
+            path,
+            strict,
+            json,
+            csv,
+            html,
+        } => {
+            ui::print_banner();
+            let f = engines::image::scan(&path, strict).await?;
+            emit("image", &path, &f, json, csv, html)?;
+        }
+        Commands::Scan {
+            user,
+            email,
+            domain,
+            image,
+            out,
+            strict,
+        } => {
+            ui::print_banner();
+            let mut all = Vec::new();
+            let mut label = Vec::new();
+            if let Some(u) = user {
+                all.extend(engines::username::scan(&u, 40, strict).await?);
+                label.push(format!("user:{u}"));
+            }
+            if let Some(e) = email {
+                all.extend(engines::email::scan(&e, strict).await?);
+                label.push(format!("email:{e}"));
+            }
+            if let Some(d) = domain {
+                all.extend(engines::domain::scan(&d, strict).await?);
+                label.push(format!("domain:{d}"));
+            }
+            if let Some(img) = image {
+                all.extend(engines::image::scan(&img, strict).await?);
+                label.push(format!("image:{img}"));
+            }
+            let q = label.join(" | ");
+            if let Some(base) = out {
+                let html = base.with_extension("html");
+                let json = base.with_extension("json");
+                let csv = base.with_extension("csv");
+                emit("scan", &q, &all, Some(json), Some(csv), Some(html))?;
+            }
+        }
+        Commands::Batch { file, strict, json, html } => {
+            ui::print_banner();
+            let text = std::fs::read_to_string(file)?;
+            let mut all = Vec::new();
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some(rest) = line.strip_prefix("user:") {
+                    all.extend(engines::username::scan(rest.trim(), 30, strict).await?);
+                } else if let Some(rest) = line.strip_prefix("email:") {
+                    all.extend(engines::email::scan(rest.trim(), strict).await?);
+                } else if let Some(rest) = line.strip_prefix("domain:") {
+                    all.extend(engines::domain::scan(rest.trim(), strict).await?);
+                } else if let Some(rest) = line.strip_prefix("image:") {
+                    all.extend(engines::image::scan(rest.trim(), strict).await?);
+                } else {
+                    // default username
+                    all.extend(engines::username::scan(line, 30, strict).await?);
+                }
+            }
+            emit("batch", "batch", &all, json, None, html)?;
         }
         Commands::History { limit } => {
             ui::print_banner();
             let store = storage::Store::open_default()?;
             let rows = store.recent_scans(limit)?;
             if rows.is_empty() {
-                println!("{}", style("No scans stored yet.").yellow());
+                println!("{}", style("No scans yet.").yellow());
             } else {
-                println!("{}", style("Recent scans").green().bold());
-                for (id, kind, query, at, hits) in rows {
-                    println!("  #{id}  [{kind}]  {query}  hits={hits}  {at}");
+                for (id, kind, query, at, n) in rows {
+                    println!("  #{id} [{kind}] {query} findings={n} {at}");
                 }
             }
         }
@@ -111,7 +265,7 @@ async fn main() -> Result<()> {
     println!();
     println!(
         "{}",
-        style("Done. Use results only on assets you are authorized to investigate.").dim()
+        style("Authorized use only. Public signals ≠ identity proof.").dim()
     );
     Ok(())
 }
